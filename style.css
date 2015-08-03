@@ -1,0 +1,65 @@
+body {
+    background: #f0f4f0;
+}
+
+#gl-canvas {
+    border: 1px black solid;
+    padding: 0px;
+}
+
+#control {
+    margin-top: 20px;
+    width: 1024px;
+}
+
+#heading {
+    width: 1024px;
+    text-align: center;
+}
+
+label {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 75px;
+}
+
+input {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0px;
+}
+
+#disp-linewidth {
+    border: 1px black solid;
+    display: inline-block;
+    width: 30px;
+    background: #c0c0d0;
+    text-align: center;
+}
+
+button {
+    vertical-align: middle;
+}
+
+#btn-undo {
+    float:left;
+}
+
+#btn-clear {
+    float:right;
+}
+
+#color-picker, #color-picker-canvas {
+    width: 50px;
+}
+
+#footer {
+    position: fixed;
+    bottom: 0;
+    font-size: 0.8em;
+}
+
+#footer > #status {
+    color: #f02020;
+    padding-left: 10em;
+}

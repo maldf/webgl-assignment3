@@ -132,6 +132,104 @@ Sphere.prototype = Object.create(CADObject.prototype);
 Sphere.prototype.addVertices = function() {}
 Sphere.prototype.draw = function() {}
 
+//-------------------------------------------------------------------------------------------------
+function Cone(color, angle) {
+    CADObject.call(this);
+    this.color = color;
+    this.angle = angle;
+    this.segments = 0;
+}
+Cone.prototype = Object.create(CADObject.prototype);
+
+Cone.prototype.addVertices = function() 
+{
+    // circle in y = -1 plane, drawn with TRIANGLE_FAN
+    var vert = [];
+    vert.push([0, -1, 0]);
+    this.segments = Math.ceil(360 / this.angle);
+    for (var i = 0; i <= this.segments; ++i) {
+        var alpha = i *  2 * Math.PI / this.segments;
+        vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
+    }
+    // cone point, drawn with TRIANGLE_FAN
+    vert.push([0, 0, 0]); 
+ 
+    for (var i = 0; i < vert.length; ++i) {
+        var v = vert[i].concat(this.color);
+        this.addPoints(v);
+    }
+
+    // topology
+    var topo = [];
+    for (var i = 0; i < this.segments + 2; ++i) {
+        topo.push(i);
+    }
+    topo.push(this.segments + 2);
+    for (var i = 1; i < this.segments + 2; ++i) {
+        topo.push(i);
+    }
+    this.addTopology(topo);
+}
+
+Cone.prototype.draw = function() 
+{
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
+}
+
+//-------------------------------------------------------------------------------------------------
+function Cylinder(color, angle) {
+    CADObject.call(this);
+    this.color = color;
+    this.angle = angle;
+    this.segments = 0;
+}
+Cylinder.prototype = Object.create(CADObject.prototype);
+
+Cylinder.prototype.addVertices = function() 
+{
+    // bottom circle in y = -1 plane, drawn with TRIANGLE_FAN
+    var vert = [];
+    vert.push([0, 0, 0]);
+    this.segments = Math.ceil(360 / this.angle);
+    for (var i = 0; i <= this.segments; ++i) {
+        var alpha = i *  2 * Math.PI / this.segments;
+        vert.push([Math.cos(alpha), 0, Math.sin(alpha)]);
+    }
+    // top circle in y = 1 plane, drawn with TRIANGLE_FAN
+    vert.push([0, 1, 0]); 
+    for (var i = 0; i <= this.segments; ++i) {
+        var alpha = i *  2 * Math.PI / this.segments;
+        vert.push([Math.cos(alpha), 1, Math.sin(alpha)]);
+    }
+
+    for (var i = 0; i < vert.length; ++i) {
+        var v = vert[i].concat(this.color);
+        this.addPoints(v);
+    }
+
+    // topology
+    var topo = [];
+    for (var i = 0; i < vert.length; ++i) {
+        topo.push(i);
+    }
+    // draw sides with TRIANGLE_STRIP
+    for (var i = 1; i <= this.segments; ++i) {
+        topo.push(i);
+        topo.push(this.segments + 2 + i);
+    }
+    // close circle
+    topo.push(1);
+    topo.push(this.segments + 3);
+    this.addTopology(topo);
+}
+
+Cylinder.prototype.draw = function() 
+{
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_STRIP, this.segments * 2 + 2, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
+}
 
 //-------------------------------------------------------------------------------------------------
 window.onload = function init()
@@ -178,9 +276,10 @@ window.onload = function init()
  
     thetaLoc = gl.getUniformLocation(program, "theta");
 
-    objs.push(new Cube([1, 0, 0, 1]));
-    //objs.push(new Cube([0, 0, 1, 1]));
-    objs.push(new Sphere([0, 1, 0, 1]));
+    //objs.push(new Cube([1, 0, 0, 1]));
+    //objs.push(new Sphere([0, 1, 0, 1]));
+    objs.push(new Cone([0, 1, 0, 1], 10));
+    objs.push(new Cylinder([0, 0, 1, 1], 10))
     for (var i = 0; i < objs.length; ++i) {
         objs[i].addVertices();
     }
@@ -325,6 +424,6 @@ function render()
         objs[i].draw();
     }
 
-    //requestAnimFrame(render);
+    requestAnimFrame(render);
 }
 

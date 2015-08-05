@@ -47,9 +47,10 @@ function CADObject()
     this.elemIdx = -1;
 }
 
-CADObject.prototype.addPoints = function(p)
+CADObject.prototype.addPoints = function(p, col)
 {
-    var points = flatten(p);
+    col = [Math.random(), Math.random(), Math.random(), 1];
+    var points = flatten(p.concat(col));
 
     gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx, points);
     if (this.vertIdx == -1) {
@@ -71,35 +72,6 @@ CADObject.prototype.addTopology = function(t)
 }
 
 //-------------------------------------------------------------------------------------------------
-/*
-const vertices = [
-    [-1, -1,  1, 0, 0, 0, 1],
-    [-1,  1,  1, 0, 0, 1, 1],
-    [ 1,  1,  1, 0, 1, 0, 1],
-    [ 1, -1,  1, 0, 1, 1, 1],
-    [-1, -1, -1, 1, 0, 0, 1],
-    [-1,  1, -1, 1, 0, 1, 1],
-    [ 1,  1, -1, 1, 1, 0, 1],
-    [ 1, -1, -1, 1, 1, 1, 1]
-];
-*/
-const vertices = [
-    [-1, -1,  1],
-    [-1,  1,  1],
-    [ 1,  1,  1],
-    [ 1, -1,  1],
-    [-1, -1, -1],
-    [-1,  1, -1],
-    [ 1,  1, -1],
-    [ 1, -1, -1]
-];
-
-// drawn as TRIANGLE_FAN
-const topology = [
-    2, 1, 0, 3, 7, 6, 5, 1,
-    4, 0, 1, 5, 6, 7, 3, 0
-];
-
 function Cube(color) 
 {
     CADObject.call(this);
@@ -109,28 +81,139 @@ Cube.prototype = Object.create(CADObject.prototype);
 
 Cube.prototype.addVertices = function()
 {
-    for (var i = 0; i < vertices.length; ++i) {
-        var v = vertices[i].concat(this.color);
-        this.addPoints(v);
+    const vert = [
+        [-1, -1,  1],
+        [-1,  1,  1],
+        [ 1,  1,  1],
+        [ 1, -1,  1],
+        [-1, -1, -1],
+        [-1,  1, -1],
+        [ 1,  1, -1],
+        [ 1, -1, -1]
+    ];
+
+    for (var i = 0; i < vert.length; ++i) {
+        this.addPoints(vert[i], this.color);
     }
+    
+    // drawn as 2x TRIANGLE_FAN
+    const topology = [
+        2, 1, 0, 3, 7, 6, 5, 1,
+        4, 0, 1, 5, 6, 7, 3, 0
+    ];
+
     this.addTopology(topology);
 }
 
 Cube.prototype.draw = function()
 {
-    gl.drawElements(gl.TRIANGLE_FAN, topology.length / 2, gl.UNSIGNED_SHORT, this.elemIdx);
-    gl.drawElements(gl.TRIANGLE_FAN, topology.length / 2, gl.UNSIGNED_SHORT, this.elemIdx + (topology.length / 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx);
+    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx + 8 * ELEM_DATA_SIZE);
 }
-
 
 //-------------------------------------------------------------------------------------------------
-function Sphere(color) {
+function Sphere(color, recurse) {
     CADObject.call(this);
     this.color = color;
+    this.recurse = recurse || 2;
 }
 Sphere.prototype = Object.create(CADObject.prototype);
-Sphere.prototype.addVertices = function() {}
-Sphere.prototype.draw = function() {}
+
+Sphere.prototype.addMeshPoint = function(p) 
+{
+    // add points normalized to unit circle length
+    normalize(p);
+    this.vert.push(p);
+    // return index
+    return this.vert.length - 1;
+}
+
+Sphere.prototype.addVertices = function() 
+{
+    // create sphere from icosahedron
+    // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
+    // create 12 vertices of a icosahedron
+    var t = (1.0 + Math.sqrt(5.0)) / 2.0;
+    this.vert = [];
+    this.addMeshPoint([-1,  t,  0]);
+    this.addMeshPoint([ 1,  t,  0]);
+    this.addMeshPoint([-1, -t,  0]);
+    this.addMeshPoint([ 1, -t,  0]);
+
+    this.addMeshPoint([ 0, -1,  t]);
+    this.addMeshPoint([ 0,  1,  t]);
+    this.addMeshPoint([ 0, -1, -t]);
+    this.addMeshPoint([ 0,  1, -t]);
+
+    this.addMeshPoint([ t,  0, -1]);
+    this.addMeshPoint([ t,  0,  1]);
+    this.addMeshPoint([-t,  0, -1]);
+    this.addMeshPoint([-t,  0,  1]);
+   
+    var faces = [];
+    // 5 faces around point 0
+    faces.push([0, 11, 5]);
+    faces.push([0, 5, 1]);
+    faces.push([0, 1, 7]);
+    faces.push([0, 7, 10]);
+    faces.push([0, 10, 11]);
+
+    // 5 adjacent faces
+    faces.push([1, 5, 9]);
+    faces.push([5, 11, 4]);
+    faces.push([11, 10, 2]);
+    faces.push([10, 7, 6]);
+    faces.push([7, 1, 8]);
+
+    // 5 faces around point 3
+    faces.push([3, 9, 4]);
+    faces.push([3, 4, 2]);
+    faces.push([3, 2, 6]);
+    faces.push([3, 6, 8]);
+    faces.push([3, 8, 9]);
+
+    // 5 adjacent faces
+    faces.push([4, 9, 5]);
+    faces.push([2, 4, 11]);
+    faces.push([6, 2, 10]);
+    faces.push([8, 6, 7]);
+    faces.push([9, 8, 1]);
+
+    // refine triangles
+    for (var i = 0; i < this.recurse; ++i) {
+        var faces2 = [];
+        for (var j = 0; j < faces.length; ++j) {
+            var tri = faces[j];
+            // replace triangle by 4 triangles
+            var a = this.addMeshPoint(mix(this.vert[tri[0]], this.vert[tri[1]], 0.5));
+            var b = this.addMeshPoint(mix(this.vert[tri[1]], this.vert[tri[2]], 0.5));
+            var c = this.addMeshPoint(mix(this.vert[tri[2]], this.vert[tri[0]], 0.5));
+
+            faces2.push([tri[0], a, c]);
+            faces2.push([tri[1], b, a]);
+            faces2.push([tri[2], c, b]);
+            faces2.push([a, b, c]);
+        }
+        faces = faces2;
+    }
+    
+    // send final vertices to GPU buffer
+    for (var i = 0; i < this.vert.length; ++i) {
+        this.addPoints(this.vert[i], this.color);
+    }
+   
+    var topo = [];
+    for (var i = 0; i < faces.length; ++i) {
+        topo = topo.concat(faces[i]);
+    }
+    this.addTopology(topo);
+    this.triangleCnt = faces.length;
+}
+
+Sphere.prototype.draw = function() 
+{
+    gl.drawElements(gl.TRIANGLES, this.triangleCnt * 3, gl.UNSIGNED_SHORT, this.elemIdx);
+}
 
 //-------------------------------------------------------------------------------------------------
 function Cone(color, angle) {
@@ -143,7 +226,7 @@ Cone.prototype = Object.create(CADObject.prototype);
 
 Cone.prototype.addVertices = function() 
 {
-    // circle in y = -1 plane, drawn with TRIANGLE_FAN
+    // circle in y = -1 plane
     var vert = [];
     vert.push([0, -1, 0]);
     this.segments = Math.ceil(360 / this.angle);
@@ -151,12 +234,11 @@ Cone.prototype.addVertices = function()
         var alpha = i *  2 * Math.PI / this.segments;
         vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
     }
-    // cone point, drawn with TRIANGLE_FAN
+    // cone point
     vert.push([0, 0, 0]); 
  
     for (var i = 0; i < vert.length; ++i) {
-        var v = vert[i].concat(this.color);
-        this.addPoints(v);
+        this.addPoints(vert[i], this.color);
     }
 
     // topology
@@ -188,7 +270,7 @@ Cylinder.prototype = Object.create(CADObject.prototype);
 
 Cylinder.prototype.addVertices = function() 
 {
-    // bottom circle in y = -1 plane, drawn with TRIANGLE_FAN
+    // bottom circle in y = -1 plane
     var vert = [];
     vert.push([0, 0, 0]);
     this.segments = Math.ceil(360 / this.angle);
@@ -196,7 +278,7 @@ Cylinder.prototype.addVertices = function()
         var alpha = i *  2 * Math.PI / this.segments;
         vert.push([Math.cos(alpha), 0, Math.sin(alpha)]);
     }
-    // top circle in y = 1 plane, drawn with TRIANGLE_FAN
+    // top circle in y = 1 plane
     vert.push([0, 1, 0]); 
     for (var i = 0; i <= this.segments; ++i) {
         var alpha = i *  2 * Math.PI / this.segments;
@@ -204,12 +286,12 @@ Cylinder.prototype.addVertices = function()
     }
 
     for (var i = 0; i < vert.length; ++i) {
-        var v = vert[i].concat(this.color);
-        this.addPoints(v);
+        this.addPoints(vert[i], this.color);
     }
 
     // topology
     var topo = [];
+    // top and bottom with TRIANGLE_FAN
     for (var i = 0; i < vert.length; ++i) {
         topo.push(i);
     }
@@ -277,7 +359,7 @@ window.onload = function init()
     thetaLoc = gl.getUniformLocation(program, "theta");
 
     //objs.push(new Cube([1, 0, 0, 1]));
-    //objs.push(new Sphere([0, 1, 0, 1]));
+    objs.push(new Sphere([0, 1, 1, 1]));
     objs.push(new Cone([0, 1, 0, 1], 10));
     objs.push(new Cylinder([0, 0, 1, 1], 10))
     for (var i = 0; i < objs.length; ++i) {

@@ -4,8 +4,8 @@ var canvas;
 var gl;
 var vBuffer;
 var iBuffer;
-var vBufferIdx;
-var iBufferIdx;
+var vBufferIdx;                     // current fill index of vertex buffer
+var iBufferIdx;                     // current fill index of element buffer
 
 /*
 var mouse_btn = false;              // state of mouse button
@@ -29,10 +29,10 @@ var lines = [];                     // all lines drawn on canvas
 
 */
 
-const NUM_VERTS = 20000;
-const VERT_DATA_SIZE = 28;
+const NUM_VERTS = 50000;
+const VERT_DATA_SIZE = 28;          // each vertex = (3 axes + 4 colors) * sizeof(float)
 
-const NUM_ELEMS = 10000;  
+const NUM_ELEMS = 20000;  
 const ELEM_DATA_SIZE = Uint16Array.BYTES_PER_ELEMENT;
 
 var objs = [];
@@ -47,27 +47,32 @@ function CADObject()
     this.elemIdx = -1;
 }
 
-CADObject.prototype.addPoints = function(p, col)
+CADObject.prototype.addPoint = function(p, col)
 {
-    col = [Math.random(), Math.random(), Math.random(), 1];
-    var points = flatten(p.concat(col));
+    col = [0, 0.5 + Math.random() / 2, 0.8 + Math.random() / 5, 1];
+    var point = flatten(p.concat(col));
 
-    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx, points);
+    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx, point);
     if (this.vertIdx == -1) {
+        // start of object
         this.vertIdx = vBufferIdx;
     }
-    vBufferIdx += points.length * 4;
+    vBufferIdx += point.length * 4;        // should be VERT_DATA_SIZE
 }
 
 CADObject.prototype.addTopology = function(t)
 {
-    // adjust element indexes to point to vertexes in vertex array
+    // adjust topology indexes to point to vertices in vertex array
+    // with offset this.vertIdx
     var topo = [];
     for (var i = 0; i < t.length; ++i) {
         topo.push(t[i] + (this.vertIdx / VERT_DATA_SIZE));
     }
     gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, iBufferIdx, new Uint16Array(topo)); 
-    this.elemIdx = iBufferIdx;
+    if (this.elemIdx == -1) {
+        // start of object
+        this.elemIdx = iBufferIdx;
+    }
     iBufferIdx += topo.length * ELEM_DATA_SIZE;
 }
 
@@ -93,15 +98,14 @@ Cube.prototype.addVertices = function()
     ];
 
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoints(vert[i], this.color);
+        this.addPoint(vert[i], this.color);
     }
     
-    // drawn as 2x TRIANGLE_FAN
+    // drawn as 2x TRIANGLE_FAN, with vertex 2 and 4 as center
     const topology = [
         2, 1, 0, 3, 7, 6, 5, 1,
         4, 0, 1, 5, 6, 7, 3, 0
     ];
-
     this.addTopology(topology);
 }
 
@@ -115,7 +119,7 @@ Cube.prototype.draw = function()
 function Sphere(color, recurse) {
     CADObject.call(this);
     this.color = color;
-    this.recurse = recurse || 2;
+    this.recurse = recurse || 3;
 }
 Sphere.prototype = Object.create(CADObject.prototype);
 
@@ -124,13 +128,13 @@ Sphere.prototype.addMeshPoint = function(p)
     // add points normalized to unit circle length
     normalize(p);
     this.vert.push(p);
-    // return index
+    // return vertex index
     return this.vert.length - 1;
 }
 
 Sphere.prototype.addVertices = function() 
 {
-    // create sphere from icosahedron
+    // create sphere from icosahedron, ref:
     // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
     // create 12 vertices of a icosahedron
     var t = (1.0 + Math.sqrt(5.0)) / 2.0;
@@ -199,27 +203,29 @@ Sphere.prototype.addVertices = function()
     
     // send final vertices to GPU buffer
     for (var i = 0; i < this.vert.length; ++i) {
-        this.addPoints(this.vert[i], this.color);
+        this.addPoint(this.vert[i], this.color);
     }
-   
+ 
+    // send triangles to element buffer
     var topo = [];
     for (var i = 0; i < faces.length; ++i) {
         topo = topo.concat(faces[i]);
     }
     this.addTopology(topo);
-    this.triangleCnt = faces.length;
+    this.elemCnt = faces.length * 3;
+    console.log(this.elemCnt / 3);
 }
 
 Sphere.prototype.draw = function() 
 {
-    gl.drawElements(gl.TRIANGLES, this.triangleCnt * 3, gl.UNSIGNED_SHORT, this.elemIdx);
+    gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx);
 }
 
 //-------------------------------------------------------------------------------------------------
 function Cone(color, angle) {
     CADObject.call(this);
     this.color = color;
-    this.angle = angle;
+    this.angle = angle || 20;
     this.segments = 0;
 }
 Cone.prototype = Object.create(CADObject.prototype);
@@ -238,7 +244,7 @@ Cone.prototype.addVertices = function()
     vert.push([0, 0, 0]); 
  
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoints(vert[i], this.color);
+        this.addPoint(vert[i], this.color);
     }
 
     // topology
@@ -263,7 +269,7 @@ Cone.prototype.draw = function()
 function Cylinder(color, angle) {
     CADObject.call(this);
     this.color = color;
-    this.angle = angle;
+    this.angle = angle || 20;
     this.segments = 0;
 }
 Cylinder.prototype = Object.create(CADObject.prototype);
@@ -286,7 +292,7 @@ Cylinder.prototype.addVertices = function()
     }
 
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoints(vert[i], this.color);
+        this.addPoint(vert[i], this.color);
     }
 
     // topology
@@ -359,9 +365,9 @@ window.onload = function init()
     thetaLoc = gl.getUniformLocation(program, "theta");
 
     //objs.push(new Cube([1, 0, 0, 1]));
-    objs.push(new Sphere([0, 1, 1, 1]));
-    objs.push(new Cone([0, 1, 0, 1], 10));
-    objs.push(new Cylinder([0, 0, 1, 1], 10))
+    objs.push(new Sphere([0, 1, 1, 1], 3));
+    //objs.push(new Cone([0, 1, 0, 1], 10));
+    //objs.push(new Cylinder([0, 0, 1, 1], 10))
     for (var i = 0; i < objs.length; ++i) {
         objs[i].addVertices();
     }
@@ -506,6 +512,6 @@ function render()
         objs[i].draw();
     }
 
-    requestAnimFrame(render);
+    //requestAnimFrame(render);
 }
 

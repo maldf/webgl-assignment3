@@ -37,19 +37,28 @@ const ELEM_DATA_SIZE = Uint16Array.BYTES_PER_ELEMENT;
 
 var objs = [];
 
-var theta = [0, 0, 0];
-var thetaLoc;
+var mvMatrixLoc;
+var prMatrixLoc;
+var drawLineLoc;
 
 //-------------------------------------------------------------------------------------------------
 function CADObject() 
 {
     this.vertIdx = -1;
     this.elemIdx = -1;
+
+    // object in world space
+    this.rotate = [0, 0, 0];
+    this.scale  = [0.2, 0.2, 0.2];
+    this.translate = [0, 0, 0];
 }
 
 CADObject.prototype.addPoint = function(p, col)
 {
-    col = [0, 0.5 + Math.random() / 2, 0.8 + Math.random() / 5, 1];
+    var tcol = col.slice();
+    for (var i = 0; i < 3; ++i) {
+        tcol[i] *= Math.random();
+    }
     var point = flatten(p.concat(col));
 
     gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx, point);
@@ -74,6 +83,21 @@ CADObject.prototype.addTopology = function(t)
         this.elemIdx = iBufferIdx;
     }
     iBufferIdx += topo.length * ELEM_DATA_SIZE;
+}
+
+CADObject.prototype.transform = function(camera)
+{
+    // transform from instance -> world coordinates
+    var s = scalem(this.scale);
+    var rx = rotate(this.rotate[0], [1, 0, 0]);
+    var ry = rotate(this.rotate[1], [0, 1, 0]);
+    var rz = rotate(this.rotate[2], [0, 0, 1]);
+    var t = translate(this.translate);
+    var r = mult(rz, mult(ry, rx));
+    var world = mult(t, mult(r, s));
+    // combine with camera transformation to create model-view matrix
+    var mv = mult(camera, world);
+    gl.uniformMatrix4fv(mvMatrixLoc, gl.FALSE, flatten(mv));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -102,17 +126,28 @@ Cube.prototype.addVertices = function()
     }
     
     // drawn as 2x TRIANGLE_FAN, with vertex 2 and 4 as center
-    const topology = [
+    var topology = [
         2, 1, 0, 3, 7, 6, 5, 1,
         4, 0, 1, 5, 6, 7, 3, 0
     ];
     this.addTopology(topology);
+
+    // draw lines 
+    var lineTopology = [
+        2, 1, 1, 0, 0, 3, 3, 2, 3, 7, 2, 6, 1, 5, 0, 4,
+        4, 5, 5, 6, 6, 7, 7, 4
+    ];
+    this.addTopology(lineTopology);
 }
 
 Cube.prototype.draw = function()
 {
+    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx);
     gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx + 8 * ELEM_DATA_SIZE);
+    
+    gl.uniform1i(drawLineLoc, 1);
+    gl.drawElements(gl.LINES, 24, gl.UNSIGNED_SHORT, this.elemIdx + 16 * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -213,11 +248,11 @@ Sphere.prototype.addVertices = function()
     }
     this.addTopology(topo);
     this.elemCnt = faces.length * 3;
-    console.log(this.elemCnt / 3);
 }
 
 Sphere.prototype.draw = function() 
 {
+    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx);
 }
 
@@ -241,7 +276,7 @@ Cone.prototype.addVertices = function()
         vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
     }
     // cone point
-    vert.push([0, 0, 0]); 
+    vert.push([0, 1, 0]); 
  
     for (var i = 0; i < vert.length; ++i) {
         this.addPoint(vert[i], this.color);
@@ -261,6 +296,7 @@ Cone.prototype.addVertices = function()
 
 Cone.prototype.draw = function() 
 {
+    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
 }
@@ -278,11 +314,11 @@ Cylinder.prototype.addVertices = function()
 {
     // bottom circle in y = -1 plane
     var vert = [];
-    vert.push([0, 0, 0]);
+    vert.push([0, -1, 0]);
     this.segments = Math.ceil(360 / this.angle);
     for (var i = 0; i <= this.segments; ++i) {
         var alpha = i *  2 * Math.PI / this.segments;
-        vert.push([Math.cos(alpha), 0, Math.sin(alpha)]);
+        vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
     }
     // top circle in y = 1 plane
     vert.push([0, 1, 0]); 
@@ -314,6 +350,7 @@ Cylinder.prototype.addVertices = function()
 
 Cylinder.prototype.draw = function() 
 {
+    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
     gl.drawElements(gl.TRIANGLE_STRIP, this.segments * 2 + 2, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
@@ -362,12 +399,31 @@ window.onload = function init()
     //window.addEventListener("mouseup",   mouse_up);
     //canvas.addEventListener("mousedown", mouse_down);
  
-    thetaLoc = gl.getUniformLocation(program, "theta");
+    mvMatrixLoc = gl.getUniformLocation(program, "mvMatrix");
+    prMatrixLoc = gl.getUniformLocation(program, "prMatrix");
+    drawLineLoc = gl.getUniformLocation(program, "drawLine");
 
-    //objs.push(new Cube([1, 0, 0, 1]));
-    objs.push(new Sphere([0, 1, 1, 1], 3));
-    //objs.push(new Cone([0, 1, 0, 1], 10));
-    //objs.push(new Cylinder([0, 0, 1, 1], 10))
+    // test objects
+    var cube = new Cube([0.8, 0.7, 0, 1]);
+    cube.scale = [80, 40, 50];
+    cube.translate = [-300, 500, 0];
+    objs.push(cube);
+    
+    var sphere = new Sphere([0, 1, 1, 1], 3);
+    sphere.scale = [50, 50, 50];
+    sphere.translate = [0, 750, 100];
+    objs.push(sphere);
+    
+    var cone = new Cone([1, 0, 1, 1], 10);
+    cone.scale = [80, -50, 80];
+    cone.translate = [220, 500, 60];
+    objs.push(cone);
+    
+    var cylinder = new Cylinder([0, 0, 1, 1], 10);
+    cylinder.scale = [30, 100, 30];
+    cylinder.translate = [0, 250, 0];
+    objs.push(cylinder);
+    
     for (var i = 0; i < objs.length; ++i) {
         objs[i].addVertices();
     }
@@ -499,19 +555,26 @@ function mouse_down(ev)
 */
 
 //-------------------------------------------------------------------------------------------------
+var iter = 0;
+
 function render()
 {
-    theta[0] += 0.4;
-    theta[1] += 0.13;
-    theta[2] += 0.07;
-    gl.uniform3fv(thetaLoc, theta);
-    
+    iter += 0.01;
+    var cam = lookAt([500 * Math.sin(iter), 600, 500 * Math.cos(iter)], [0, 500, 0], [0, 1, 0]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    var pr  = perspective(90, 2, 100, -500, 500);
 
+    gl.uniformMatrix4fv(prMatrixLoc, gl.FALSE, flatten(pr));
+
+    // iterate over all objects, do model-view transformation
     for (var i = 0; i < objs.length; ++i) {
+        //objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
+
+        objs[i].transform(cam); 
         objs[i].draw();
     }
 
-    //requestAnimFrame(render);
+    requestAnimFrame(render);
 }
 

@@ -29,10 +29,10 @@ var lines = [];                     // all lines drawn on canvas
 
 */
 
-const NUM_VERTS = 50000;
+const NUM_VERTS = 100000;
 const VERT_DATA_SIZE = 28;          // each vertex = (3 axes + 4 colors) * sizeof(float)
 
-const NUM_ELEMS = 20000;  
+const NUM_ELEMS = 50000;  
 const ELEM_DATA_SIZE = Uint16Array.BYTES_PER_ELEMENT;
 
 var objs = [];
@@ -162,6 +162,12 @@ Sphere.prototype.addMeshPoint = function(p)
 {
     // add points normalized to unit circle length
     normalize(p);
+    // only add new points, if already exist, return its index
+    for (var i = 0; i < this.vert.length; ++i) {
+        if (equal(this.vert[i], p)) {
+            return i;
+        }
+    }
     this.vert.push(p);
     // return vertex index
     return this.vert.length - 1;
@@ -248,12 +254,38 @@ Sphere.prototype.addVertices = function()
     }
     this.addTopology(topo);
     this.elemCnt = faces.length * 3;
+ 
+    // lines
+    topo = [];
+    var lineCache = {};
+    var cache_and_add = function(x, y) {
+        if (x > y) {
+            var tmp = x;
+            x = y;
+            y = tmp;
+        }
+        var prop = x + '_' + y;
+        if (!lineCache[prop]) {
+            lineCache[prop] = 1;
+            topo.push(x, y);
+        };
+    }
+    for (var i = 0; i < faces.length; ++i) {
+        cache_and_add(faces[i][0], faces[i][1]);
+        cache_and_add(faces[i][1], faces[i][2]);
+        cache_and_add(faces[i][2], faces[i][0]);
+    }
+    this.addTopology(topo);
+    this.lineCnt = topo.length;
 }
 
 Sphere.prototype.draw = function() 
 {
     gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx);
+    
+    gl.uniform1i(drawLineLoc, 1);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + this.elemCnt * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -271,7 +303,7 @@ Cone.prototype.addVertices = function()
     var vert = [];
     vert.push([0, -1, 0]);
     this.segments = Math.ceil(360 / this.angle);
-    for (var i = 0; i <= this.segments; ++i) {
+    for (var i = 0; i < this.segments; ++i) {
         var alpha = i *  2 * Math.PI / this.segments;
         vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
     }
@@ -284,14 +316,28 @@ Cone.prototype.addVertices = function()
 
     // topology
     var topo = [];
-    for (var i = 0; i < this.segments + 2; ++i) {
+    topo.push(0);
+    for (var i = 1; i <= this.segments; ++i) {
         topo.push(i);
     }
-    topo.push(this.segments + 2);
-    for (var i = 1; i < this.segments + 2; ++i) {
+    topo.push(1);
+    topo.push(this.segments + 1);
+    for (var i = 1; i <= this.segments; ++i) {
         topo.push(i);
     }
+    topo.push(1);
     this.addTopology(topo);
+    
+    // lines
+    var topo = [];
+    for (var i = 1; i < this.segments; ++i) {
+        topo.push(i, i + 1);
+        topo.push(this.segments + 1, i);
+    }
+    topo.push(this.segments, 1);
+    topo.push(this.segments + 1, this.segments);
+    this.addTopology(topo);
+    this.lineCnt = topo.length;
 }
 
 Cone.prototype.draw = function() 
@@ -299,6 +345,9 @@ Cone.prototype.draw = function()
     gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
+    
+    gl.uniform1i(drawLineLoc, 1);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -316,13 +365,13 @@ Cylinder.prototype.addVertices = function()
     var vert = [];
     vert.push([0, -1, 0]);
     this.segments = Math.ceil(360 / this.angle);
-    for (var i = 0; i <= this.segments; ++i) {
+    for (var i = 0; i < this.segments; ++i) {
         var alpha = i *  2 * Math.PI / this.segments;
         vert.push([Math.cos(alpha), -1, Math.sin(alpha)]);
     }
     // top circle in y = 1 plane
     vert.push([0, 1, 0]); 
-    for (var i = 0; i <= this.segments; ++i) {
+    for (var i = 0; i < this.segments; ++i) {
         var alpha = i *  2 * Math.PI / this.segments;
         vert.push([Math.cos(alpha), 1, Math.sin(alpha)]);
     }
@@ -334,18 +383,40 @@ Cylinder.prototype.addVertices = function()
     // topology
     var topo = [];
     // top and bottom with TRIANGLE_FAN
-    for (var i = 0; i < vert.length; ++i) {
+    topo.push(0);
+    for (var i = 1; i <= this.segments; ++i) {
         topo.push(i);
     }
+    topo.push(1);
+    topo.push(this.segments + 1);
+    for (var i = 1; i <= this.segments; ++i) {
+        topo.push(this.segments + 1 + i);
+    }
+    topo.push(this.segments + 2);
     // draw sides with TRIANGLE_STRIP
     for (var i = 1; i <= this.segments; ++i) {
         topo.push(i);
-        topo.push(this.segments + 2 + i);
+        topo.push(this.segments + 1 + i);
     }
     // close circle
     topo.push(1);
-    topo.push(this.segments + 3);
+    topo.push(this.segments + 2);
     this.addTopology(topo);
+    
+    // lines
+    var topo = [];
+    for (var i = 1; i < this.segments; ++i) {
+        topo.push(i, i + 1);
+        topo.push(this.segments + i + 1, this.segments + i + 2);
+        topo.push(i, this.segments + i + 1);
+    }
+    // close circle
+    topo.push(this.segments, 1);
+    topo.push(2 * this.segments + 1, this.segments + 2);
+    topo.push(this.segments, 2 * this.segments + 1);
+
+    this.addTopology(topo);
+    this.lineCnt = topo.length;
 }
 
 Cylinder.prototype.draw = function() 
@@ -353,7 +424,10 @@ Cylinder.prototype.draw = function()
     gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
-    gl.drawElements(gl.TRIANGLE_STRIP, this.segments * 2 + 2, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_STRIP, 2 * this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
+    
+    gl.uniform1i(drawLineLoc, 1);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + (4 * this.segments + 6) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -409,19 +483,19 @@ window.onload = function init()
     cube.translate = [-300, 500, 0];
     objs.push(cube);
     
-    var sphere = new Sphere([0, 1, 1, 1], 3);
-    sphere.scale = [50, 50, 50];
+    var sphere = new Sphere([0, 1, 1, 1], 2);
+    sphere.scale = [70, 70, 70];
     sphere.translate = [0, 750, 100];
     objs.push(sphere);
     
-    var cone = new Cone([1, 0, 1, 1], 10);
-    cone.scale = [80, -50, 80];
+    var cone = new Cone([1, 0, 1, 1], 20);
+    cone.scale = [80, 50, 80];
     cone.translate = [220, 500, 60];
     objs.push(cone);
     
-    var cylinder = new Cylinder([0, 0, 1, 1], 10);
-    cylinder.scale = [30, 100, 30];
-    cylinder.translate = [0, 250, 0];
+    var cylinder = new Cylinder([0, 0.5, 0.8, 1], 20);
+    cylinder.scale = [50, 120, 50];
+    cylinder.translate = [0, 250, 100];
     objs.push(cylinder);
     
     for (var i = 0; i < objs.length; ++i) {
@@ -569,7 +643,7 @@ function render()
 
     // iterate over all objects, do model-view transformation
     for (var i = 0; i < objs.length; ++i) {
-        //objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
+        objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
 
         objs[i].transform(cam); 
         objs[i].draw();

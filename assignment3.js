@@ -3,6 +3,7 @@
 var canvas;
 var gl;
 var vBuffer;
+var cBuffer;
 var iBuffer;
 var vBufferIdx;                     // current fill index of vertex buffer
 var iBufferIdx;                     // current fill index of element buffer
@@ -29,8 +30,9 @@ var lines = [];                     // all lines drawn on canvas
 
 */
 
-const NUM_VERTS = 100000;
-const VERT_DATA_SIZE = 28;          // each vertex = (3 axes + 4 colors) * sizeof(float)
+const NUM_VERTS = 50000;
+const VERT_DATA_SIZE = 12;          // each vertex = (3 axes ) * sizeof(float)
+const COLOR_DATA_SIZE = 16;         // each vertex = (4 colors) * sizeof(float)
 
 const NUM_ELEMS = 50000;  
 const ELEM_DATA_SIZE = Uint16Array.BYTES_PER_ELEMENT;
@@ -49,24 +51,28 @@ function CADObject()
 
     // object in world space
     this.rotate = [0, 0, 0];
-    this.scale  = [0.2, 0.2, 0.2];
+    this.scale  = [1, 1, 1];
     this.translate = [0, 0, 0];
 }
 
 CADObject.prototype.addPoint = function(p, col)
 {
+    /*
     var tcol = col.slice();
     for (var i = 0; i < 3; ++i) {
         tcol[i] *= Math.random();
     }
-    var point = flatten(p.concat(col));
-
-    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx, point);
+    */
+    //var point = flatten(p.concat(col));
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx * VERT_DATA_SIZE, flatten(p));
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx * COLOR_DATA_SIZE, flatten(col));
     if (this.vertIdx == -1) {
         // start of object
         this.vertIdx = vBufferIdx;
     }
-    vBufferIdx += point.length * 4;        // should be VERT_DATA_SIZE
+    vBufferIdx++;
 }
 
 CADObject.prototype.addTopology = function(t)
@@ -75,14 +81,14 @@ CADObject.prototype.addTopology = function(t)
     // with offset this.vertIdx
     var topo = [];
     for (var i = 0; i < t.length; ++i) {
-        topo.push(t[i] + (this.vertIdx / VERT_DATA_SIZE));
+        topo.push(t[i] + this.vertIdx);
     }
-    gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, iBufferIdx, new Uint16Array(topo)); 
+    gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, iBufferIdx * ELEM_DATA_SIZE, new Uint16Array(topo)); 
     if (this.elemIdx == -1) {
         // start of object
         this.elemIdx = iBufferIdx;
     }
-    iBufferIdx += topo.length * ELEM_DATA_SIZE;
+    iBufferIdx += topo.length;
 }
 
 CADObject.prototype.transform = function(camera)
@@ -143,11 +149,11 @@ Cube.prototype.addVertices = function()
 Cube.prototype.draw = function()
 {
     gl.uniform1i(drawLineLoc, 0);
-    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx);
-    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx + 8 * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, (this.elemIdx + 8) * ELEM_DATA_SIZE);
     
     gl.uniform1i(drawLineLoc, 1);
-    gl.drawElements(gl.LINES, 24, gl.UNSIGNED_SHORT, this.elemIdx + 16 * ELEM_DATA_SIZE);
+    gl.drawElements(gl.LINES, 24, gl.UNSIGNED_SHORT, (this.elemIdx + 16) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -282,10 +288,10 @@ Sphere.prototype.addVertices = function()
 Sphere.prototype.draw = function() 
 {
     gl.uniform1i(drawLineLoc, 0);
-    gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx);
+    gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
     
     gl.uniform1i(drawLineLoc, 1);
-    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + this.elemCnt * ELEM_DATA_SIZE);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + this.elemCnt) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -343,11 +349,11 @@ Cone.prototype.addVertices = function()
 Cone.prototype.draw = function() 
 {
     gl.uniform1i(drawLineLoc, 0);
-    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
-    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + this.segments + 2) * ELEM_DATA_SIZE);
     
     gl.uniform1i(drawLineLoc, 1);
-    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + 2 * (this.segments + 2)) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -422,12 +428,12 @@ Cylinder.prototype.addVertices = function()
 Cylinder.prototype.draw = function() 
 {
     gl.uniform1i(drawLineLoc, 0);
-    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx);
-    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + (this.segments + 2) * ELEM_DATA_SIZE);
-    gl.drawElements(gl.TRIANGLE_STRIP, 2 * this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx + 2 * (this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + this.segments + 2) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.TRIANGLE_STRIP, 2 * this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + 2 * (this.segments + 2)) * ELEM_DATA_SIZE);
     
     gl.uniform1i(drawLineLoc, 1);
-    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, this.elemIdx + (4 * this.segments + 6) * ELEM_DATA_SIZE);
+    gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + 4 * this.segments + 6) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -454,19 +460,23 @@ window.onload = function init()
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, NUM_VERTS * VERT_DATA_SIZE, gl.STATIC_DRAW);
     vBufferIdx = 0;
+    // Associate shader variables with our data buffer
+    var vPosition = gl.getAttribLocation(program, "vPosition");
+    gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 3 * 4, 0);
+    gl.enableVertexAttribArray(vPosition);
+    
+    cBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, NUM_VERTS * COLOR_DATA_SIZE, gl.STATIC_DRAW);
+    // Associate shader variables with our data buffer
+    var vColor = gl.getAttribLocation(program, "vColor");
+    gl.vertexAttribPointer(vColor, 4, gl.FLOAT, false, 4 * 4, 0);
+    gl.enableVertexAttribArray(vColor);
     
     iBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, NUM_ELEMS * ELEM_DATA_SIZE, gl.STATIC_DRAW); 
     iBufferIdx = 0;
-
-    // Associate shader variables with our data buffer
-    var vPosition = gl.getAttribLocation(program, "vPosition");
-    gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 7 * 4, 0);
-    gl.enableVertexAttribArray(vPosition);
-    var vColor = gl.getAttribLocation(program, "vColor");
-    gl.vertexAttribPointer(vColor, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
-    gl.enableVertexAttribArray(vColor);
 
     // catch mouse down in canvas, catch other mouse events in whole window
     //window.addEventListener("mousemove", mouse_move);

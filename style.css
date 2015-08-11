@@ -8,7 +8,7 @@ body {
 }
 
 #control {
-    margin-top: 20px;
+    margin-top: 1em;
     width: 1024px;
 }
 
@@ -17,40 +17,47 @@ body {
     text-align: center;
 }
 
-label {
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 75px;
-}
-
-input {
-    display: inline-block;
-    vertical-align: middle;
-    margin: 0px;
-}
-
-#disp-linewidth {
+.table-ctrl {
+    margin-top: 1em;
     border: 1px black solid;
-    display: inline-block;
-    width: 30px;
-    background: #c0c0d0;
+    background: #e0e0f0;
+    padding-right: 10px;
+}
+
+.table-ctrl td {
+    text-align: left;
+}
+
+#td-obj-color {
     text-align: center;
+}
+
+#table-current-obj {
+    float: left;
+}
+
+#table-camera {
+    float: right;
 }
 
 button {
     vertical-align: middle;
 }
 
-#btn-undo {
-    float:left;
+#btn-create {
+    margin-left: 15em;
 }
 
 #btn-clear {
     float:right;
 }
 
-#color-picker, #color-picker-canvas {
+#color-picker {
     width: 50px;
+}
+
+#sel-obj {
+    width: 10em;
 }
 
 #footer {

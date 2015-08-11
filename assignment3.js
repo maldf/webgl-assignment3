@@ -3,7 +3,6 @@
 var canvas;
 var gl;
 var vBuffer;
-var cBuffer;
 var iBuffer;
 var vBufferIdx;                     // current fill index of vertex buffer
 var iBufferIdx;                     // current fill index of element buffer
@@ -30,44 +29,36 @@ var lines = [];                     // all lines drawn on canvas
 
 */
 
-const NUM_VERTS = 50000;
+const NUM_VERTS = 5000;
 const VERT_DATA_SIZE = 12;          // each vertex = (3 axes ) * sizeof(float)
 const COLOR_DATA_SIZE = 16;         // each vertex = (4 colors) * sizeof(float)
 
-const NUM_ELEMS = 50000;  
+const NUM_ELEMS = 10000;  
 const ELEM_DATA_SIZE = Uint16Array.BYTES_PER_ELEMENT;
 
 var objs = [];
+var meshes = [];
+var objCount = 0;
+var currObj = null;
 
 var mvMatrixLoc;
 var prMatrixLoc;
-var drawLineLoc;
+var colorLoc;
+
+var lineColor = [0, 0, 0, 1];
+
 
 //-------------------------------------------------------------------------------------------------
-function CADObject() 
+function Mesh() 
 {
     this.vertIdx = -1;
     this.elemIdx = -1;
-
-    // object in world space
-    this.rotate = [0, 0, 0];
-    this.scale  = [1, 1, 1];
-    this.translate = [0, 0, 0];
 }
 
-CADObject.prototype.addPoint = function(p, col)
+Mesh.prototype.addPoint = function(p)
 {
-    /*
-    var tcol = col.slice();
-    for (var i = 0; i < 3; ++i) {
-        tcol[i] *= Math.random();
-    }
-    */
-    //var point = flatten(p.concat(col));
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx * VERT_DATA_SIZE, flatten(p));
-    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, vBufferIdx * COLOR_DATA_SIZE, flatten(col));
     if (this.vertIdx == -1) {
         // start of object
         this.vertIdx = vBufferIdx;
@@ -75,20 +66,33 @@ CADObject.prototype.addPoint = function(p, col)
     vBufferIdx++;
 }
 
-CADObject.prototype.addTopology = function(t)
+Mesh.prototype.addTopology = function(t)
 {
     // adjust topology indexes to point to vertices in vertex array
     // with offset this.vertIdx
-    var topo = [];
+    var adjTopo = [];
     for (var i = 0; i < t.length; ++i) {
-        topo.push(t[i] + this.vertIdx);
+        adjTopo.push(t[i] + this.vertIdx);
     }
-    gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, iBufferIdx * ELEM_DATA_SIZE, new Uint16Array(topo)); 
+    gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, iBufferIdx * ELEM_DATA_SIZE, new Uint16Array(adjTopo)); 
     if (this.elemIdx == -1) {
         // start of object
         this.elemIdx = iBufferIdx;
     }
-    iBufferIdx += topo.length;
+    iBufferIdx += adjTopo.length;
+}
+
+//-------------------------------------------------------------------------------------------------
+function CADObject(name, mesh, color)
+{
+    this.name = name;
+    this.mesh = mesh;
+    this.color = color;
+
+    // object in world space
+    this.rotate = [0, 0, 0];
+    this.scale  = [1, 1, 1];
+    this.translate = [0, 0, 0];
 }
 
 CADObject.prototype.transform = function(camera)
@@ -107,12 +111,11 @@ CADObject.prototype.transform = function(camera)
 }
 
 //-------------------------------------------------------------------------------------------------
-function Cube(color) 
+function Cube() 
 {
-    CADObject.call(this);
-    this.color = color;
+    Mesh.call(this);
 }
-Cube.prototype = Object.create(CADObject.prototype);
+Cube.prototype = Object.create(Mesh.prototype);
 
 Cube.prototype.addVertices = function()
 {
@@ -128,7 +131,7 @@ Cube.prototype.addVertices = function()
     ];
 
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoint(vert[i], this.color);
+        this.addPoint(vert[i]);
     }
     
     // drawn as 2x TRIANGLE_FAN, with vertex 2 and 4 as center
@@ -148,27 +151,25 @@ Cube.prototype.addVertices = function()
 
 Cube.prototype.draw = function()
 {
-    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
     gl.drawElements(gl.TRIANGLE_FAN, 8, gl.UNSIGNED_SHORT, (this.elemIdx + 8) * ELEM_DATA_SIZE);
     
-    gl.uniform1i(drawLineLoc, 1);
+    gl.uniform4fv(colorLoc, lineColor);
     gl.drawElements(gl.LINES, 24, gl.UNSIGNED_SHORT, (this.elemIdx + 16) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
-function Sphere(color, recurse) {
-    CADObject.call(this);
-    this.color = color;
+function Sphere(recurse) {
+    Mesh.call(this);
     this.recurse = recurse || 3;
 }
-Sphere.prototype = Object.create(CADObject.prototype);
+Sphere.prototype = Object.create(Mesh.prototype);
 
 Sphere.prototype.addMeshPoint = function(p) 
 {
     // add points normalized to unit circle length
     normalize(p);
-    // only add new points, if already exist, return its index
+    // only add new points; if point already exists, return its index
     for (var i = 0; i < this.vert.length; ++i) {
         if (equal(this.vert[i], p)) {
             return i;
@@ -183,6 +184,7 @@ Sphere.prototype.addVertices = function()
 {
     // create sphere from icosahedron, ref:
     // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
+    
     // create 12 vertices of a icosahedron
     var t = (1.0 + Math.sqrt(5.0)) / 2.0;
     this.vert = [];
@@ -250,7 +252,7 @@ Sphere.prototype.addVertices = function()
     
     // send final vertices to GPU buffer
     for (var i = 0; i < this.vert.length; ++i) {
-        this.addPoint(this.vert[i], this.color);
+        this.addPoint(this.vert[i]);
     }
  
     // send triangles to element buffer
@@ -287,21 +289,19 @@ Sphere.prototype.addVertices = function()
 
 Sphere.prototype.draw = function() 
 {
-    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLES, this.elemCnt, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
     
-    gl.uniform1i(drawLineLoc, 1);
+    gl.uniform4fv(colorLoc, lineColor);
     gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + this.elemCnt) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
-function Cone(color, angle) {
-    CADObject.call(this);
-    this.color = color;
+function Cone(angle) {
+    Mesh.call(this);
     this.angle = angle || 20;
     this.segments = 0;
 }
-Cone.prototype = Object.create(CADObject.prototype);
+Cone.prototype = Object.create(Mesh.prototype);
 
 Cone.prototype.addVertices = function() 
 {
@@ -317,7 +317,7 @@ Cone.prototype.addVertices = function()
     vert.push([0, 1, 0]); 
  
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoint(vert[i], this.color);
+        this.addPoint(vert[i]);
     }
 
     // topology
@@ -348,22 +348,20 @@ Cone.prototype.addVertices = function()
 
 Cone.prototype.draw = function() 
 {
-    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + this.segments + 2) * ELEM_DATA_SIZE);
     
-    gl.uniform1i(drawLineLoc, 1);
+    gl.uniform4fv(colorLoc, lineColor);
     gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + 2 * (this.segments + 2)) * ELEM_DATA_SIZE);
 }
 
 //-------------------------------------------------------------------------------------------------
-function Cylinder(color, angle) {
-    CADObject.call(this);
-    this.color = color;
+function Cylinder(angle) {
+    Mesh.call(this);
     this.angle = angle || 20;
     this.segments = 0;
 }
-Cylinder.prototype = Object.create(CADObject.prototype);
+Cylinder.prototype = Object.create(Mesh.prototype);
 
 Cylinder.prototype.addVertices = function() 
 {
@@ -383,7 +381,7 @@ Cylinder.prototype.addVertices = function()
     }
 
     for (var i = 0; i < vert.length; ++i) {
-        this.addPoint(vert[i], this.color);
+        this.addPoint(vert[i]);
     }
 
     // topology
@@ -427,12 +425,11 @@ Cylinder.prototype.addVertices = function()
 
 Cylinder.prototype.draw = function() 
 {
-    gl.uniform1i(drawLineLoc, 0);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, this.elemIdx * ELEM_DATA_SIZE);
     gl.drawElements(gl.TRIANGLE_FAN, this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + this.segments + 2) * ELEM_DATA_SIZE);
     gl.drawElements(gl.TRIANGLE_STRIP, 2 * this.segments + 2, gl.UNSIGNED_SHORT, (this.elemIdx + 2 * (this.segments + 2)) * ELEM_DATA_SIZE);
     
-    gl.uniform1i(drawLineLoc, 1);
+    gl.uniform4fv(colorLoc, lineColor);
     gl.drawElements(gl.LINES, this.lineCnt, gl.UNSIGNED_SHORT, (this.elemIdx + 4 * this.segments + 6) * ELEM_DATA_SIZE);
 }
 
@@ -465,14 +462,6 @@ window.onload = function init()
     gl.vertexAttribPointer(vPosition, 3, gl.FLOAT, false, 3 * 4, 0);
     gl.enableVertexAttribArray(vPosition);
     
-    cBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, NUM_VERTS * COLOR_DATA_SIZE, gl.STATIC_DRAW);
-    // Associate shader variables with our data buffer
-    var vColor = gl.getAttribLocation(program, "vColor");
-    gl.vertexAttribPointer(vColor, 4, gl.FLOAT, false, 4 * 4, 0);
-    gl.enableVertexAttribArray(vColor);
-    
     iBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, NUM_ELEMS * ELEM_DATA_SIZE, gl.STATIC_DRAW); 
@@ -483,86 +472,158 @@ window.onload = function init()
     //window.addEventListener("mouseup",   mouse_up);
     //canvas.addEventListener("mousedown", mouse_down);
  
+    colorLoc    = gl.getUniformLocation(program, "vColor");
     mvMatrixLoc = gl.getUniformLocation(program, "mvMatrix");
     prMatrixLoc = gl.getUniformLocation(program, "prMatrix");
-    drawLineLoc = gl.getUniformLocation(program, "drawLine");
+    
+    // Create meshes
+    meshes['cube']     = new Cube();
+    meshes['sphere']   = new Sphere(2);
+    meshes['cone']     = new Cone(15);
+    meshes['cylinder'] = new Cylinder(15);
+    for (var key in meshes) {
+        if (meshes.hasOwnProperty(key)) {
+            meshes[key].addVertices();
+        }
+    }
 
     // test objects
-    var cube = new Cube([0.8, 0.7, 0, 1]);
-    cube.scale = [80, 40, 50];
-    cube.translate = [-300, 500, 0];
-    objs.push(cube);
+    /*
+    var obj = new CADObject('tst1' ,meshes['cube'], [0.8, 0.7, 0, 1]);
+    obj.scale = [80, 40, 50];
+    obj.translate = [-300, 500, 0];
+    objs.push(obj);
     
-    var sphere = new Sphere([0, 1, 1, 1], 2);
-    sphere.scale = [70, 70, 70];
-    sphere.translate = [0, 750, 100];
-    objs.push(sphere);
+    var obj = new CADObject('tst2' ,meshes['sphere'], [0, 1, 1, 1]);
+    obj.scale = [70, 70, 70];
+    obj.translate = [0, 750, 100];
+    objs.push(obj);
     
-    var cone = new Cone([1, 0, 1, 1], 20);
-    cone.scale = [80, 50, 80];
-    cone.translate = [220, 500, 60];
-    objs.push(cone);
+    var obj = new CADObject('tst3' ,meshes['cone'], [1, 0, 1, 1]);
+    obj.scale = [80, 50, 80];
+    obj.translate = [220, 500, 60];
+    objs.push(obj);
     
-    var cylinder = new Cylinder([0, 0.5, 0.8, 1], 20);
-    cylinder.scale = [50, 120, 50];
-    cylinder.translate = [0, 250, 100];
-    objs.push(cylinder);
-    
-    for (var i = 0; i < objs.length; ++i) {
-        objs[i].addVertices();
-    }
+    var obj = new CADObject('tst4' ,meshes['cylinder'], [0, 0.5, 0.8, 1]);
+    obj.scale = [50, 120, 50];
+    obj.translate = [0, 250, 100];
+    objs.push(obj);
     
     render();
+    */
 
-    // handle color pickers
-    // line color
-    /*
-    document.getElementById("color-picker").value = "#2050ff";          // default
-    lineColor = convert_string_to_rgb(document.getElementById("color-picker").value);
-    document.getElementById("color-picker").oninput = function() {
-    
-    thetaLoc - gl.getUniformLocation(program, "theta");
-    lineColor = convert_string_to_rgb(this.value);
-    }
-    // canvas color
-    document.getElementById("color-picker-canvas").value = "#e0e0e0";   // default
-    var cc = convert_string_to_rgb(document.getElementById("color-picker-canvas").value);
-    gl.clearColor(cc[0], cc[1], cc[2], 1.0);
-    document.getElementById("color-picker-canvas").oninput = function() {
-        var cc = convert_string_to_rgb(this.value);
-        gl.clearColor(cc[0], cc[1], cc[2], 1.0);
-        render();
-    }
-   
-    // handle line width selector
-    document.getElementById("sel-linewidth").value = 1;     // default
-    document.getElementById("sel-linewidth").oninput = function() {
-        lineWidth = this.value;
-        document.getElementById("disp-linewidth").innerHTML = lineWidth;
-    };
+    // handle create
+    document.getElementById('btn-create').onclick = function() {
+        var type = document.getElementById('sel-type').value;
+        var sel_obj = document.getElementById('sel-obj');
+        var opt = document.createElement('option');
+        objCount++;
+        var name = type + objCount;
+        opt.value = name;
+        opt.innerHTML = name;
+        sel_obj.appendChild(opt);
+        sel_obj.value = opt.value;
 
-    // handle undo
-    document.getElementById("btn-undo").onclick = function() {
-        var line = lines.pop();
-        if (line) {
-            index = line.start;
-        }
-        document.getElementById("status").innerHTML = "";
+        objs.push(new CADObject(name, meshes[type], [0.8, 0.8, 0.8, 1]));
+        currObj = objs[objs.length - 1];
+        currObj.color = convert_string_to_rgb(document.getElementById("obj-color").value);
+        currObj.scale = [50, 50, 50];
+        currObj.translate = [0, 500, 0];
+        cur_obj_set_controls();
         render();
     }
     
     // handle clear
     document.getElementById("btn-clear").onclick = function() {
-        lines = [];
-        index = 0;
-        document.getElementById("status").innerHTML = "";
+        objs = [];
+        currObj = null;
+        objCount = 0;
+        var sel_obj = document.getElementById('sel-obj');
+        sel_obj.innerHTML = '';
         render();
     }
-    */
+
+    document.getElementById("sel-obj").onchange = function() {
+        for (var i = 0; i < objs.length; ++i) {
+            if (objs[i].name == this.value) {
+                currObj = objs[i];
+                break;
+            }
+        }
+        cur_obj_set_controls();
+    }
+
+    document.getElementById('range-scale-x').oninput = cur_obj_change;
+    document.getElementById('range-scale-y').oninput = cur_obj_change;
+    document.getElementById('range-scale-z').oninput = cur_obj_change;
+    document.getElementById('range-rotate-x').oninput = cur_obj_change;
+    document.getElementById('range-rotate-y').oninput = cur_obj_change;
+    document.getElementById('range-rotate-z').oninput = cur_obj_change;
+    document.getElementById('range-pos-x').oninput = cur_obj_change;
+    document.getElementById('range-pos-y').oninput = cur_obj_change;
+    document.getElementById('range-pos-z').oninput = cur_obj_change;
+    
+    document.getElementById("obj-color").value = "#2050ff";          // default
+    document.getElementById("obj-color").oninput = cur_obj_change;
+
+    cur_obj_change();
 }
 
 //-------------------------------------------------------------------------------------------------
-/*
+function cur_obj_set_controls()
+{
+    if (!currObj) {
+        return;
+    }
+    
+    var col = currObj.color.slice();
+    col[0] *= 255;
+    col[1] *= 255;
+    col[2] *= 255;
+    document.getElementById("obj-color").value = "#" + col[0].toString(16) + col[1].toString(16) + col[2].toString(16);
+    document.getElementById('range-scale-x').value = document.getElementById('scale-x').innerHTML = currObj.scale[0];
+    document.getElementById('range-scale-y').value = document.getElementById('scale-y').innerHTML = currObj.scale[1];
+    document.getElementById('range-scale-z').value = document.getElementById('scale-z').innerHTML = currObj.scale[2];
+    document.getElementById('range-rotate-x').value = document.getElementById('rotate-x').innerHTML = currObj.rotate[0];
+    document.getElementById('range-rotate-y').value = document.getElementById('rotate-y').innerHTML = currObj.rotate[1];
+    document.getElementById('range-rotate-z').value = document.getElementById('rotate-z').innerHTML = currObj.rotate[2];
+    document.getElementById('range-pos-x').value = document.getElementById('pos-x').innerHTML = currObj.translate[0];
+    document.getElementById('range-pos-y').value = document.getElementById('pos-y').innerHTML = currObj.translate[1];
+    document.getElementById('range-pos-z').value = document.getElementById('pos-z').innerHTML = currObj.translate[2];
+}
+
+//-------------------------------------------------------------------------------------------------
+function cur_obj_change()
+{
+    if (currObj) {
+        currObj.color = convert_string_to_rgb(document.getElementById("obj-color").value);
+
+        var scale_x = document.getElementById('range-scale-x').value;
+        var scale_y = document.getElementById('range-scale-y').value;
+        var scale_z = document.getElementById('range-scale-z').value;
+        currObj.scale[0] = document.getElementById('scale-x').innerHTML = scale_x;
+        currObj.scale[1] = document.getElementById('scale-y').innerHTML = scale_y;
+        currObj.scale[2] = document.getElementById('scale-z').innerHTML = scale_z;
+
+        var rot_x = document.getElementById('range-rotate-x').value;
+        var rot_y = document.getElementById('range-rotate-y').value;
+        var rot_z = document.getElementById('range-rotate-z').value;
+        currObj.rotate[0] = document.getElementById('rotate-x').innerHTML = rot_x;
+        currObj.rotate[1] = document.getElementById('rotate-y').innerHTML = rot_y;
+        currObj.rotate[2] = document.getElementById('rotate-z').innerHTML = rot_z;
+
+        var pos_x = document.getElementById('range-pos-x').value;
+        var pos_y = document.getElementById('range-pos-y').value;
+        var pos_z = document.getElementById('range-pos-z').value;
+        currObj.translate[0] = document.getElementById('pos-x').innerHTML = pos_x;
+        currObj.translate[1] = document.getElementById('pos-y').innerHTML = pos_y;
+        currObj.translate[2] = document.getElementById('pos-z').innerHTML = pos_z;
+    }
+    
+    render();
+}
+
+//-------------------------------------------------------------------------------------------------
 // convert string "#rrggbb" to vec4() with rgb color
 function convert_string_to_rgb(str) {
     var color = undefined;
@@ -577,6 +638,7 @@ function convert_string_to_rgb(str) {
     return color;
 }
 
+/*
 //-------------------------------------------------------------------------------------------------
 // get mouse position and convert to clip coordinates
 function mouse_to_canvas_coords(ev)
@@ -643,22 +705,25 @@ var iter = 0;
 
 function render()
 {
-    iter += 0.01;
+    iter = 0;
     var cam = lookAt([500 * Math.sin(iter), 600, 500 * Math.cos(iter)], [0, 500, 0], [0, 1, 0]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
-    var pr  = perspective(90, 2, 100, -500, 500);
+    var pr = perspective(90, 2, 50, 1000);
+    //var pr = ortho(-1000, 1000, -500, 500, -1000, 1000);
 
     gl.uniformMatrix4fv(prMatrixLoc, gl.FALSE, flatten(pr));
 
     // iterate over all objects, do model-view transformation
     for (var i = 0; i < objs.length; ++i) {
-        objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
-
+        gl.uniform4fv(colorLoc, flatten(objs[i].color));
+        
+        //objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
         objs[i].transform(cam); 
-        objs[i].draw();
+        
+        objs[i].mesh.draw();
     }
 
-    requestAnimFrame(render);
+    //requestAnimFrame(render);
 }
 

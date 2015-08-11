@@ -8,20 +8,15 @@
 
 <script id="vertex-shader" type="x-shader/x-vertex">
 attribute vec4 vPosition;
-attribute vec4 vColor;
+uniform vec4 vColor;
 varying vec4 fColor;
 uniform mat4 mvMatrix;
 uniform mat4 prMatrix;
-uniform bool drawLine;
 
 void main() 
 {
     gl_Position = prMatrix * mvMatrix * vPosition;
-    if (drawLine) {
-        fColor = vec4(0 ,0, 0, 1);
-    } else {
-        fColor = vColor;
-    }
+    fColor = vColor;
 }
 </script>
 
@@ -51,21 +46,116 @@ void main()
     </canvas>
 
    
-    <!---
     <div id="control">
-        <label for="color-picker">Line color</label>
-        <input id="color-picker" type="color" value="#0000ff">
-        <label for="color-picker-canvas">Canvas color</label>
-        <input id="color-picker-canvas" type="color" value="#e0e0e0">
+        <span id="sel-obj-div">
+            Active object:
+            <select id="sel-obj" value="">
+            </select>
+        </span>
+        
+        <button id="btn-create">Create new</button>
+        <select id="sel-type">
+            <option value="cube" selected>Cube</option>
+            <option value="sphere">Sphere</option>
+            <option value="cone">Cone</option>
+            <option value="cylinder">Cylinder</option>
+        </select>
 
-        <label for="sel-linewidth">Line width</label>
-        <input id="sel-linewidth" type="range" min=1 max=10 value=1 step=1">
-        <span id="disp-linewidth">1</span>
-
-        <button id="btn-undo">Undo</button>
         <button id="btn-clear">Clear</button>
+        
+        <br>
+
+        <!-- Current object controls -->
+        <table id="table-current-obj" class="table-ctrl">
+            <tr>
+                <td><label for="obj-color">color</label></td>
+                <td id="td-obj-color"><input id="obj-color" type="color" value="#0000ff"></td>
+            </tr>
+            <tr>
+                <td>scale: x</td>
+                <td><input id="range-scale-x" type="range" min=-200 max=200 value=0></td>
+                <td id="scale-x">100</td>
+            </tr>
+            <tr>
+                <td>scale: y</td>
+                <td><input id="range-scale-y" type="range" min=-200 max=200 value=0></td>
+                <td id="scale-y">100</td>
+            </tr>
+            <tr>
+                <td>scale: z</td>
+                <td><input id="range-scale-z" type="range" min=-200 max=200 value=0></td>
+                <td id="scale-z">100</td>
+            </tr>
+            
+            <tr>
+                <td>rotate: x</td>
+                <td><input id="range-rotate-x" type="range" min=-180 max=180 value=0></td>
+                <td id="rotate-x">0</td>
+            </tr>
+            <tr>
+                <td>rotate: y</td>
+                <td><input id="range-rotate-y" type="range" min=-180 max=180 value=0></td>
+                <td id="rotate-y">0</td>
+            </tr>
+            <tr>
+                <td>rotate: z</td>
+                <td><input id="range-rotate-z" type="range" min=-180 max=180 value=0></td>
+                <td id="rotate-z">0</td>
+            </tr>
+            
+            <tr>
+                <td>position: x</td>
+                <td><input id="range-pos-x" type="range" min=-500 max=500 value=0></td>
+                <td id="pos-x">0</td>
+            </tr>
+            <tr>
+                <td>position: y</td>
+                <td><input id="range-pos-y" type="range" min=-500 max=1000 value=0></td>
+                <td id="pos-y">0</td>
+            </tr>
+            <tr>
+                <td>position: z</td>
+                <td><input id="range-pos-z" type="range" min=-500 max=500 value=0></td>
+                <td id="pos-z">0</td>
+            </tr>
+        </table>
+
+        <!-- Camera controls -->
+        <table id="table-camera" class="table-ctrl">
+            <tr>
+                <td>camera: x</td>
+                <td><input id="range-cam-x" type="range" min=-1000 max=1000 value=100></td>
+                <td id="cam-x">100</td>
+            </tr>
+            <tr>
+                <td>camera: y</td>
+                <td><input id="range-cam-y" type="range" min=-1000 max=1000 value=100></td>
+                <td id="cam-y">100</td>
+            </tr>
+            <tr>
+                <td>camera: z</td>
+                <td><input id="range-cam-z" type="range" min=-1000 max=1000 value=100></td>
+                <td id="cam-z">100</td>
+            </tr>
+            
+            <tr>
+                <td>lookat: x</td>
+                <td><input id="range-lookat-x" type="range" min=-1000 max=1000 value=0></td>
+                <td id="lookat-x">0</td>
+            </tr>
+            <tr>
+                <td>lookat: y</td>
+                <td><input id="range-lookat-y" type="range" min=-1000 max=1000 value=500></td>
+                <td id="lookat-y">0</td>
+            </tr>
+            <tr>
+                <td>lookat: z</td>
+                <td><input id="range-lookat-z" type="range" min=-1000 max=1000 value=0></td>
+                <td id="lookat-z">0</td>
+            </tr>
+        </table>
+        
     </div>
-    -->
 
     <!---
     <div id="footer">

@@ -7,29 +7,7 @@ var iBuffer;
 var vBufferIdx;                     // current fill index of vertex buffer
 var iBufferIdx;                     // current fill index of element buffer
 
-/*
-var mouse_btn = false;              // state of mouse button
-var index = 0;                      // index into ARRAY_BUFFER on GPU
-
-function Point(x, y) {
-    this.x = x;
-    this.y = y;
-}
-var lineColor = vec4(0, 0, 1, 1);   // current line color selected
-var lineWidth = 1;                  // current line width selected
-
-// store metadata about each line 
-function Poly(start, count, width) {
-    this.start = start;             // start index in ARRAY_BUFFER
-    this.count = count;             // number of line segments in polygon
-    this.width = width;             // line width
-    // color is send down with each vertex
-}
-var lines = [];                     // all lines drawn on canvas
-
-*/
-
-const NUM_VERTS = 5000;
+const NUM_VERTS = 10000;
 const VERT_DATA_SIZE = 12;          // each vertex = (3 axes ) * sizeof(float)
 const COLOR_DATA_SIZE = 16;         // each vertex = (4 colors) * sizeof(float)
 
@@ -46,7 +24,16 @@ var prMatrixLoc;
 var colorLoc;
 
 var lineColor = [0, 0, 0, 1];
+var camEye = [500, 600, -750];
+var camAt  = [0, 500, 0];
 
+var scaleMax  = [200, 200, 200];
+var rotateMax = [180, 180, 180];
+var posMax    = [1000, 1000, 1000];
+
+var scaleMin  = [0, 0, 0];
+var rotateMin = negate(rotateMax);
+var posMin    = negate(posMax);
 
 //-------------------------------------------------------------------------------------------------
 function Mesh() 
@@ -467,10 +454,7 @@ window.onload = function init()
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, NUM_ELEMS * ELEM_DATA_SIZE, gl.STATIC_DRAW); 
     iBufferIdx = 0;
 
-    // catch mouse down in canvas, catch other mouse events in whole window
-    //window.addEventListener("mousemove", mouse_move);
-    //window.addEventListener("mouseup",   mouse_up);
-    //canvas.addEventListener("mousedown", mouse_down);
+    canvas.addEventListener("mousemove", mouse_move);
  
     colorLoc    = gl.getUniformLocation(program, "vColor");
     mvMatrixLoc = gl.getUniformLocation(program, "mvMatrix");
@@ -513,36 +497,10 @@ window.onload = function init()
     */
 
     // handle create
-    document.getElementById('btn-create').onclick = function() {
-        var type = document.getElementById('sel-type').value;
-        var sel_obj = document.getElementById('sel-obj');
-        var opt = document.createElement('option');
-        objCount++;
-        var name = type + objCount;
-        opt.value = name;
-        opt.innerHTML = name;
-        sel_obj.appendChild(opt);
-        sel_obj.value = opt.value;
-
-        objs.push(new CADObject(name, meshes[type], [0.8, 0.8, 0.8, 1]));
-        currObj = objs[objs.length - 1];
-        currObj.color = convert_string_to_rgb(document.getElementById("obj-color").value);
-        currObj.scale = [50, 50, 50];
-        currObj.translate = [0, 500, 0];
-        cur_obj_set_controls();
-        render();
-    }
-    
+    document.getElementById('btn-create').onclick = create_new_obj;
     // handle clear
-    document.getElementById("btn-clear").onclick = function() {
-        objs = [];
-        currObj = null;
-        objCount = 0;
-        var sel_obj = document.getElementById('sel-obj');
-        sel_obj.innerHTML = '';
-        render();
-    }
-
+    document.getElementById("btn-clear").onclick = reset_scene;
+    // handle select of active object
     document.getElementById("sel-obj").onchange = function() {
         for (var i = 0; i < objs.length; ++i) {
             if (objs[i].name == this.value) {
@@ -563,10 +521,71 @@ window.onload = function init()
     document.getElementById('range-pos-y').oninput = cur_obj_change;
     document.getElementById('range-pos-z').oninput = cur_obj_change;
     
-    document.getElementById("obj-color").value = "#2050ff";          // default
+    document.getElementById("obj-color").value = "#20d0ff";          // default
     document.getElementById("obj-color").oninput = cur_obj_change;
+    
+    document.getElementById('range-cam-x').oninput = cam_change;
+    document.getElementById('range-cam-y').oninput = cam_change;
+    document.getElementById('range-cam-z').oninput = cam_change;
+    document.getElementById('range-lookat-x').oninput = cam_change;
+    document.getElementById('range-lookat-y').oninput = cam_change;
+    document.getElementById('range-lookat-z').oninput = cam_change;
 
-    cur_obj_change();
+    reset_scene();
+}
+
+//-------------------------------------------------------------------------------------------------
+function create_new_obj()
+{
+    var type = document.getElementById('sel-type').value;
+    var sel_obj = document.getElementById('sel-obj');
+    var opt = document.createElement('option');
+    objCount++;
+    var name = type + objCount;
+    opt.value = name;
+    opt.innerHTML = name;
+    sel_obj.appendChild(opt);
+    sel_obj.value = opt.value;
+
+    objs.push(new CADObject(name, meshes[type], [0.8, 0.8, 0.8, 1]));
+    currObj = objs[objs.length - 1];
+    currObj.color = convert_string_to_rgb(document.getElementById("obj-color").value);
+    currObj.scale = [50, 50, 50];
+    currObj.translate = camAt.slice();
+    cur_obj_set_controls();
+    render();
+}
+//-------------------------------------------------------------------------------------------------
+function reset_scene()
+{
+    objs = [];
+    currObj = null;
+    objCount = 0;
+    var sel_obj = document.getElementById('sel-obj');
+    sel_obj.innerHTML = '';
+
+    camEye = [500, 600, 500];
+    camAt  = [0, 500, 0];
+    cam_set();
+    render();
+}
+
+//-------------------------------------------------------------------------------------------------
+function clip_to_range(x, min, max)
+{
+    if (Array.isArray(x)) {
+        for (var i = 0; i < x.length; ++i) {
+            if (x[i] < min[i]) 
+                x[i] = min[i];
+            else if (x[i] > max[i])
+                x[i] = max[i];
+        }
+    } else {
+        if (x < min) x = min;
+        else if (x > max) x = max;
+    }
+
+    return x;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -581,6 +600,10 @@ function cur_obj_set_controls()
     col[1] *= 255;
     col[2] *= 255;
     document.getElementById("obj-color").value = "#" + col[0].toString(16) + col[1].toString(16) + col[2].toString(16);
+    
+    clip_to_range(currObj.scale, scaleMin, scaleMax);
+    clip_to_range(currObj.rotate, rotateMin, rotateMax);
+    clip_to_range(currObj.translate, posMin, posMax);
     document.getElementById('range-scale-x').value = document.getElementById('scale-x').innerHTML = currObj.scale[0];
     document.getElementById('range-scale-y').value = document.getElementById('scale-y').innerHTML = currObj.scale[1];
     document.getElementById('range-scale-z').value = document.getElementById('scale-z').innerHTML = currObj.scale[2];
@@ -624,8 +647,40 @@ function cur_obj_change()
 }
 
 //-------------------------------------------------------------------------------------------------
+function cam_set()
+{
+    document.getElementById('range-cam-x').value = document.getElementById('cam-x').innerHTML = camEye[0];
+    document.getElementById('range-cam-y').value = document.getElementById('cam-y').innerHTML = camEye[1];
+    document.getElementById('range-cam-z').value = document.getElementById('cam-z').innerHTML = camEye[2];
+    document.getElementById('range-lookat-x').value = document.getElementById('lookat-x').innerHTML = camAt[0];
+    document.getElementById('range-lookat-y').value = document.getElementById('lookat-y').innerHTML = camAt[1];
+    document.getElementById('range-lookat-z').value = document.getElementById('lookat-z').innerHTML = camAt[2];
+}
+
+//-------------------------------------------------------------------------------------------------
+function cam_change()
+{
+    camEye[0] = document.getElementById('range-cam-x').value;
+    camEye[1] = document.getElementById('range-cam-y').value;
+    camEye[2] = document.getElementById('range-cam-z').value;
+    document.getElementById('cam-x').innerHTML = camEye[0];
+    document.getElementById('cam-y').innerHTML = camEye[1];
+    document.getElementById('cam-z').innerHTML = camEye[2];
+
+    camAt[0] = document.getElementById('range-lookat-x').value;
+    camAt[1] = document.getElementById('range-lookat-y').value;
+    camAt[2] = document.getElementById('range-lookat-z').value;
+    document.getElementById('lookat-x').innerHTML = camAt[0];
+    document.getElementById('lookat-y').innerHTML = camAt[1];
+    document.getElementById('lookat-z').innerHTML = camAt[2];
+
+    render();
+}
+
+//-------------------------------------------------------------------------------------------------
 // convert string "#rrggbb" to vec4() with rgb color
-function convert_string_to_rgb(str) {
+function convert_string_to_rgb(str) 
+{
     var color = undefined;
     // value should be in format "#rrggbb"
     // TODO: better error checking
@@ -638,78 +693,32 @@ function convert_string_to_rgb(str) {
     return color;
 }
 
-/*
 //-------------------------------------------------------------------------------------------------
-// get mouse position and convert to clip coordinates
-function mouse_to_canvas_coords(ev)
-{
-    var rect = canvas.getBoundingClientRect();
-    // subtract 1 for border size and padding as set in stylesheet
-    var mx = ev.clientX - rect.left - 1;
-    var my = ev.clientY - rect.top - 1;
-
-    var p = new Point(2 * mx / canvas.width - 1, 1 - 2 * my / canvas.height);
-    return p;
-}
-
-//-------------------------------------------------------------------------------------------------
-function add_point(ev)
-{
-    if (index < NUMPOINTS) {
-        var pos = mouse_to_canvas_coords(ev);
-        // each point is a position(vec2) and a color(vec4)
-        var p = vec2(pos.x, pos.y).concat(lineColor);
-        gl.bufferSubData(gl.ARRAY_BUFFER, POINT_DATA_SIZE * index, flatten(p));
-        index++;
-        return true;
-    } else {
-        document.getElementById("status").innerHTML = NUMPOINTS + " point limit reached";
-        return false;
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
+var prev_mouse_pos = [0, 0];
 function mouse_move(ev)
 {
-    if (mouse_btn) {
-        // send next point and its color to GPU 
-        if (add_point(ev)) {
-            lines[lines.length - 1].count++;
+    if (currObj && ev.buttons) {
+        if (ev.buttons & 1) {
+            var incX = Number(ev.clientX - prev_mouse_pos[0]);
+            var incY = Number(prev_mouse_pos[1] - ev.clientY);
+            currObj.translate[0] += incX; 
+            currObj.translate[1] += incY; 
+
+            cur_obj_set_controls();
             render();
         }
     }
+
+    prev_mouse_pos = [ev.clientX, ev.clientY];
 }
 
 //-------------------------------------------------------------------------------------------------
-function mouse_up(ev)
-{
-    // include endpoint in line
-    mouse_move(ev);
-    mouse_btn = false;
-}
-
-//-------------------------------------------------------------------------------------------------
-function mouse_down(ev)
-{
-    // start new line segment,
-    // send 1st point and its color to GPU
-    if (add_point(ev)) {
-        lines.push(new Poly(index - 1, 0, lineWidth));
-        mouse_btn = true;
-    }
-}
-*/
-
-//-------------------------------------------------------------------------------------------------
-var iter = 0;
-
 function render()
 {
-    iter = 0;
-    var cam = lookAt([500 * Math.sin(iter), 600, 500 * Math.cos(iter)], [0, 500, 0], [0, 1, 0]);
+    var cam = lookAt(camEye, camAt, [0, 1, 0]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
-    var pr = perspective(90, 2, 50, 1000);
+    var pr = perspective(90, 2, 1, 4000);
     //var pr = ortho(-1000, 1000, -500, 500, -1000, 1000);
 
     gl.uniformMatrix4fv(prMatrixLoc, gl.FALSE, flatten(pr));
@@ -717,13 +726,11 @@ function render()
     // iterate over all objects, do model-view transformation
     for (var i = 0; i < objs.length; ++i) {
         gl.uniform4fv(colorLoc, flatten(objs[i].color));
-        
-        //objs[i].rotate = add(objs[i].rotate, [1, 0.2, 0.1]);
         objs[i].transform(cam); 
-        
         objs[i].mesh.draw();
     }
 
+    // testing
     //requestAnimFrame(render);
 }
 

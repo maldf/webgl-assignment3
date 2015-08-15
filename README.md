@@ -1,2 +1,2 @@
-# WebGL assignment2: Painting with the Mouse
+# WebGL assignment3: Geometric CAD
 Tested with Firefox and Chrome on Linux.

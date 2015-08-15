@@ -24,7 +24,7 @@ var prMatrixLoc;
 var colorLoc;
 
 var lineColor = [0, 0, 0, 1];
-var camEye = [500, 600, -750];
+var camEye = [0, 600, 750];
 var camAt  = [0, 500, 0];
 
 var scaleMax  = [200, 200, 200];
@@ -498,19 +498,17 @@ window.onload = function init()
 
     // handle create
     document.getElementById('btn-create').onclick = create_new_obj;
+    // handle delete
+    document.getElementById('btn-del').onclick = delete_obj;
     // handle clear
     document.getElementById("btn-clear").onclick = reset_scene;
     // handle select of active object
-    document.getElementById("sel-obj").onchange = function() {
-        for (var i = 0; i < objs.length; ++i) {
-            if (objs[i].name == this.value) {
-                currObj = objs[i];
-                break;
-            }
-        }
-        cur_obj_set_controls();
-    }
-
+    document.getElementById("sel-obj").onchange = select_obj;
+    // handle perspective
+    document.getElementById('radio-proj-perspective').onchange = render;
+    document.getElementById('radio-proj-ortho').onchange = render;
+   
+    // inputs and slider controls
     document.getElementById('range-scale-x').oninput = cur_obj_change;
     document.getElementById('range-scale-y').oninput = cur_obj_change;
     document.getElementById('range-scale-z').oninput = cur_obj_change;
@@ -524,6 +522,7 @@ window.onload = function init()
     document.getElementById("obj-color").value = "#20d0ff";          // default
     document.getElementById("obj-color").oninput = cur_obj_change;
     
+    document.getElementById('radio-proj-perspective').checked = true;
     document.getElementById('range-cam-x').oninput = cam_change;
     document.getElementById('range-cam-y').oninput = cam_change;
     document.getElementById('range-cam-z').oninput = cam_change;
@@ -555,6 +554,42 @@ function create_new_obj()
     cur_obj_set_controls();
     render();
 }
+
+//-------------------------------------------------------------------------------------------------
+function delete_obj()
+{
+    if (!currObj) {
+        return;
+    }
+    
+    for (var i = 0; i < objs.length; ++i) {
+        if (objs[i].name == currObj.name) {
+            objs.splice(i, 1);
+            var sel_opt = document.getElementById('sel-obj');
+            sel_opt.remove(sel_opt.selectedIndex);
+            select_obj.call(sel_opt);
+            render();
+            break;
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+function select_obj()
+{
+    if (!objs.length) {
+        currObj = null;
+    } else {
+        for (var i = 0; i < objs.length; ++i) {
+            if (objs[i].name == this.value) {
+                currObj = objs[i];
+                break;
+            }
+        }
+    }
+    cur_obj_set_controls();
+}
+
 //-------------------------------------------------------------------------------------------------
 function reset_scene()
 {
@@ -564,7 +599,7 @@ function reset_scene()
     var sel_obj = document.getElementById('sel-obj');
     sel_obj.innerHTML = '';
 
-    camEye = [500, 600, 500];
+    camEye = [0, 600, 750];
     camAt  = [0, 500, 0];
     cam_set();
     render();
@@ -624,23 +659,23 @@ function cur_obj_change()
         var scale_x = document.getElementById('range-scale-x').value;
         var scale_y = document.getElementById('range-scale-y').value;
         var scale_z = document.getElementById('range-scale-z').value;
-        currObj.scale[0] = document.getElementById('scale-x').innerHTML = scale_x;
-        currObj.scale[1] = document.getElementById('scale-y').innerHTML = scale_y;
-        currObj.scale[2] = document.getElementById('scale-z').innerHTML = scale_z;
+        currObj.scale[0] = document.getElementById('scale-x').innerHTML = +scale_x;
+        currObj.scale[1] = document.getElementById('scale-y').innerHTML = +scale_y;
+        currObj.scale[2] = document.getElementById('scale-z').innerHTML = +scale_z;
 
         var rot_x = document.getElementById('range-rotate-x').value;
         var rot_y = document.getElementById('range-rotate-y').value;
         var rot_z = document.getElementById('range-rotate-z').value;
-        currObj.rotate[0] = document.getElementById('rotate-x').innerHTML = rot_x;
-        currObj.rotate[1] = document.getElementById('rotate-y').innerHTML = rot_y;
-        currObj.rotate[2] = document.getElementById('rotate-z').innerHTML = rot_z;
+        currObj.rotate[0] = document.getElementById('rotate-x').innerHTML = +rot_x;
+        currObj.rotate[1] = document.getElementById('rotate-y').innerHTML = +rot_y;
+        currObj.rotate[2] = document.getElementById('rotate-z').innerHTML = +rot_z;
 
         var pos_x = document.getElementById('range-pos-x').value;
         var pos_y = document.getElementById('range-pos-y').value;
         var pos_z = document.getElementById('range-pos-z').value;
-        currObj.translate[0] = document.getElementById('pos-x').innerHTML = pos_x;
-        currObj.translate[1] = document.getElementById('pos-y').innerHTML = pos_y;
-        currObj.translate[2] = document.getElementById('pos-z').innerHTML = pos_z;
+        currObj.translate[0] = document.getElementById('pos-x').innerHTML = +pos_x;
+        currObj.translate[1] = document.getElementById('pos-y').innerHTML = +pos_y;
+        currObj.translate[2] = document.getElementById('pos-z').innerHTML = +pos_z;
     }
     
     render();
@@ -699,10 +734,13 @@ function mouse_move(ev)
 {
     if (currObj && ev.buttons) {
         if (ev.buttons & 1) {
-            var incX = Number(ev.clientX - prev_mouse_pos[0]);
-            var incY = Number(prev_mouse_pos[1] - ev.clientY);
+            var incX = ev.clientX - prev_mouse_pos[0];
+            var incY = prev_mouse_pos[1] - ev.clientY;
             currObj.translate[0] += incX; 
             currObj.translate[1] += incY; 
+            // ensure values are ints
+            currObj.translate[0] = parseInt(currObj.translate[0]); 
+            currObj.translate[1] = parseInt(currObj.translate[1]); 
 
             cur_obj_set_controls();
             render();
@@ -718,8 +756,11 @@ function render()
     var cam = lookAt(camEye, camAt, [0, 1, 0]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
-    var pr = perspective(90, 2, 1, 4000);
-    //var pr = ortho(-1000, 1000, -500, 500, -1000, 1000);
+    if (document.getElementById('radio-proj-perspective').checked) {
+        var pr = perspective(90, 2, 1, 4000);
+    } else {
+        var pr = ortho(-2000, 2000, -1000, 1000, -2000, 2000);
+    }
 
     gl.uniformMatrix4fv(prMatrixLoc, gl.FALSE, flatten(pr));
 

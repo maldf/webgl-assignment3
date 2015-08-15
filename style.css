@@ -28,7 +28,7 @@ body {
     text-align: left;
 }
 
-#td-obj-color {
+#td-obj-color, #td-radio-proj {
     text-align: center;
 }
 
@@ -45,7 +45,7 @@ button {
 }
 
 #btn-create {
-    margin-left: 15em;
+    margin-left: 10em;
 }
 
 #btn-clear {

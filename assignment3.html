@@ -51,6 +51,7 @@ void main()
             Active object:
             <select id="sel-obj" value="">
             </select>
+            <button id="btn-del">Delete</button>
         </span>
         
         <button id="btn-create">Create new</button>
@@ -123,6 +124,13 @@ void main()
         <!-- Camera controls -->
         <table id="table-camera" class="table-ctrl">
             <tr>
+                <td>projection</td>
+                <td id="td-radio-proj">
+                    <input id="radio-proj-perspective" type="radio" name="proj" value="perspective">perspective
+                    <input id="radio-proj-ortho" type="radio" name="proj" value="ortho">ortho
+                </td>
+            </tr>
+            <tr>
                 <td>camera: x</td>
                 <td><input id="range-cam-x" type="range" min=-1000 max=1000 value=100></td>
                 <td id="cam-x">100</td>
@@ -157,10 +165,8 @@ void main()
         
     </div>
 
-    <!---
     <div id="footer">
-        Tested with Firefox and Chrome on Linux.<span id="status"></span>
+        Tested with Firefox and Chrome.<span id="status"></span>
     </div>
-    -->
 </body>
 </html>
